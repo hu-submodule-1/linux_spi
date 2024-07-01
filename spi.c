@@ -265,7 +265,7 @@ bool spi_write_byte(const char *spi_dev_name, const uint8_t write_data)
 
     // spi传输结构体赋值
     memset(&spi_transfer, 0, sizeof(spi_transfer));
-    // 发送的寄存器地址+数据
+    // 发送的数据
     spi_transfer.tx_buf = (unsigned long)write_buf;
     // 缓冲长度(发送数据长度)
     spi_transfer.len = 1;
@@ -297,9 +297,79 @@ bool spi_write_byte(const char *spi_dev_name, const uint8_t write_data)
  */
 bool spi_write_nbyte(const char *spi_dev_name, const uint8_t *write_data, const uint32_t write_data_len)
 {
-    // FIXME: 待完善
+    int ret = -1;
+    // 未发送数据长度
+    uint32_t remain_data_len = 0;
+    // 本次发送数据长度
+    uint32_t current_data_len = 0;
+    // 本次发送数据偏移量
+    uint32_t data_offset = 0;
+    // 累计传输数据长度
+    int transferred_data_len = 0;
+    struct spi_ioc_transfer spi_transfer = {0};
+    // SPI设备信息
+    spi_dev_info_t spi_dev_info = {0};
 
-    return false;
+    if (!spi_dev_name)
+    {
+        return false;
+    }
+
+    // SPI设备未打开, 直接返回失败
+    if (!spi_find_dev_info(&spi_dev_info, spi_dev_name))
+    {
+        return false;
+    }
+
+    // 未发送数据长度
+    remain_data_len = write_data_len;
+
+    pthread_mutex_lock(&spi_dev_info.spi_dev_mutex);
+
+    for (uint32_t i = 0; remain_data_len > 0; ++i)
+    {
+        // 计算本次发送数据长度(未发送数据长度和单次最大传输长度比较)
+        current_data_len = ((remain_data_len < SPI_MAX_TRANSFER_LEN) ? remain_data_len : SPI_MAX_TRANSFER_LEN);
+
+        // 计算本次发送数据偏移量
+        data_offset = (i * SPI_MAX_TRANSFER_LEN);
+
+        // spi传输结构体赋值
+        spi_transfer.tx_buf = (unsigned long)(write_data + data_offset);
+        spi_transfer.len = current_data_len;
+        spi_transfer.cs_change = 0;
+
+        // 发送数据
+        ret = ioctl(spi_dev_info.spi_dev_fd, SPI_IOC_MESSAGE(1), &spi_transfer);
+        // 发送失败
+        if (-1 == ret)
+        {
+            pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+            return false;
+        }
+        // 发送成功
+        else
+        {
+            // 计算累计传输数据长度
+            transferred_data_len += spi_transfer.len;
+
+            // 计算未发送数据长度
+            remain_data_len -= current_data_len;
+        }
+    }
+
+    // 数据未全部发送
+    if (write_data_len != transferred_data_len)
+    {
+        pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+        return false;
+    }
+
+    pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+    return true;
 }
 
 /**
@@ -311,9 +381,41 @@ bool spi_write_nbyte(const char *spi_dev_name, const uint8_t *write_data, const 
  */
 bool spi_read_byte(uint8_t *read_data, const char *spi_dev_name)
 {
-    // FIXME: 待完善
+    int ret = -1;
+    struct spi_ioc_transfer spi_transfer = {0};
+    // SPI设备信息
+    spi_dev_info_t spi_dev_info = {0};
 
-    return false;
+    if (!spi_dev_name)
+    {
+        return false;
+    }
+
+    // SPI设备未打开, 直接返回失败
+    if (!spi_find_dev_info(&spi_dev_info, spi_dev_name))
+    {
+        return false;
+    }
+
+    pthread_mutex_lock(&spi_dev_info.spi_dev_mutex);
+
+    // spi传输结构体赋值
+    memset(&spi_transfer, 0, sizeof(spi_transfer));
+    spi_transfer.rx_buf = (unsigned long)read_data;
+    spi_transfer.len = 1;
+    spi_transfer.cs_change = 0;
+
+    ret = ioctl(spi_dev_info.spi_dev_fd, SPI_IOC_MESSAGE(1), &spi_transfer);
+    if (-1 == ret)
+    {
+        pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+        return false;
+    }
+
+    pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+    return true;
 }
 
 /**
@@ -326,9 +428,86 @@ bool spi_read_byte(uint8_t *read_data, const char *spi_dev_name)
  */
 bool spi_read_nbyte(uint8_t *read_data, const char *spi_dev_name, const uint16_t read_data_len)
 {
-    // FIXME: 待完善
+    int ret = -1;
+    // 未读取数据长度
+    uint32_t remain_data_len = 0;
+    // 本次读取数据长度
+    uint32_t current_data_len = 0;
+    // 本次读取数据偏移量
+    uint32_t data_offset = 0;
+    // 累计传输数据长度
+    int transferred_data_len = 0;
+    struct spi_ioc_transfer spi_transfer;
+    // SPI设备信息
+    spi_dev_info_t spi_dev_info = {0};
 
-    return false;
+    if ((!spi_dev_name) || (!read_data))
+    {
+        return false;
+    }
+
+    // 长度错误, 直接返回失败
+    if (read_data_len <= 1)
+    {
+        return false;
+    }
+
+    // 串口未打开, 直接返回失败
+    if (!spi_find_dev_info(&spi_dev_info, spi_dev_name))
+    {
+        return false;
+    }
+
+    pthread_mutex_lock(&spi_dev_info.spi_dev_mutex);
+
+    // 未读取数据长度
+    remain_data_len = read_data_len;
+
+    // 循环读取数据
+    for (uint32_t i = 0; remain_data_len > 0; ++i)
+    {
+        // 计算本次读取数据长度(未发送数据长度和单次最大传输长度比较)
+        current_data_len = (remain_data_len < SPI_MAX_TRANSFER_LEN) ? remain_data_len : SPI_MAX_TRANSFER_LEN;
+
+        // 计算本次读取数据偏移量
+        data_offset = (i * SPI_MAX_TRANSFER_LEN);
+
+        // spi传输结构体赋值
+        spi_transfer.rx_buf = (unsigned long)(read_data + data_offset);
+        spi_transfer.len = current_data_len;
+        spi_transfer.cs_change = 0;
+
+        // 读取数据
+        ret = ioctl(spi_dev_info.spi_dev_fd, SPI_IOC_MESSAGE(1), &spi_transfer);
+        // 读取失败
+        if (-1 == ret)
+        {
+            pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+            return false;
+        }
+        // 读取成功
+        else
+        {
+            // 计算累计传输数据长度
+            transferred_data_len += spi_transfer.len;
+
+            // 计算未发送数据长度
+            remain_data_len -= current_data_len;
+        }
+    }
+
+    // 数据未全部读取
+    if (transferred_data_len != read_data_len)
+    {
+        pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+        return false;
+    }
+
+    pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
+
+    return true;
 }
 
 /**
@@ -415,7 +594,7 @@ bool spi_write_nbyte_sub(const char *spi_dev_name, const uint8_t reg_addr,
     // 本次发送数据偏移量
     uint32_t data_offset = 0;
     // 累计传输数据长度
-    int transfered_data_len = 0;
+    int transferred_data_len = 0;
     struct spi_ioc_transfer spi_transfer[2];
     // SPI设备信息
     spi_dev_info_t spi_dev_info = {0};
@@ -479,7 +658,7 @@ bool spi_write_nbyte_sub(const char *spi_dev_name, const uint8_t reg_addr,
         else
         {
             // 计算累计传输数据长度
-            transfered_data_len += (ret - spi_transfer[0].len);
+            transferred_data_len += (ret - spi_transfer[0].len);
 
             // 计算未发送数据长度
             remain_data_len -= current_data_len;
@@ -487,7 +666,7 @@ bool spi_write_nbyte_sub(const char *spi_dev_name, const uint8_t reg_addr,
     }
 
     // 数据未全部发送
-    if (write_data_len != transfered_data_len)
+    if (write_data_len != transferred_data_len)
     {
         pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
 
@@ -583,7 +762,7 @@ bool spi_read_nbyte_sub(uint8_t *read_data, const char *spi_dev_name,
     // 本次读取数据偏移量
     uint32_t data_offset = 0;
     // 累计传输数据长度
-    int transfered_data_len = 0;
+    int transferred_data_len = 0;
     struct spi_ioc_transfer spi_transfer[2];
     // SPI设备信息
     spi_dev_info_t spi_dev_info = {0};
@@ -648,7 +827,7 @@ bool spi_read_nbyte_sub(uint8_t *read_data, const char *spi_dev_name,
         else
         {
             // 计算累计传输数据长度
-            transfered_data_len += (ret - spi_transfer[0].len);
+            transferred_data_len += (ret - spi_transfer[0].len);
 
             // 计算未发送数据长度
             remain_data_len -= current_data_len;
@@ -656,7 +835,7 @@ bool spi_read_nbyte_sub(uint8_t *read_data, const char *spi_dev_name,
     }
 
     // 数据未全部读取
-    if (transfered_data_len != read_data_len)
+    if (transferred_data_len != read_data_len)
     {
         pthread_mutex_unlock(&spi_dev_info.spi_dev_mutex);
 
