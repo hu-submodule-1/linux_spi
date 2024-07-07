@@ -23,7 +23,7 @@ extern "C"
 #include <stdbool.h>
 
 // SPI单次最大传输长度
-#define SPI_MAX_TRANSFER_LEN 28
+#define SPI_MAX_TRANSFER_LEN 4096
 
 #define SPI_CPHA 0x01
 #define SPI_CPOL 0x02
@@ -48,6 +48,12 @@ typedef enum
  * @return false: 失败
  */
 bool spi_open(const char *spi_dev_name, const spi_mode_e spi_mode, const uint32_t spi_speed, const uint8_t spi_bits);
+
+/**
+ * @brief  设置SPI单次最大传输长度, 未设置或设置值为0会使用内部默认值SPI_MAX_TRANSFER_LEN
+ * @param  max_transfer_len: 输入参数, 单次最大传输长度
+ */
+void spi_set_max_transfer_len(const uint32_t max_transfer_len);
 
 /**
  * @brief  关闭SPI设备

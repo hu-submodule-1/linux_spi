@@ -41,6 +41,8 @@ typedef struct
 static uint8_t g_spi_dev_num = 0;
 // SPI设备信息
 static spi_dev_info_t g_spi_dev_info[SPI_DEV_MAX_NUM];
+// SPI单次最大传输长度
+static uint32_t g_spi_max_transfer_len = 0;
 
 /**
  * @brief  查找指定SPI设备的信息
@@ -181,6 +183,15 @@ bool spi_open(const char *spi_dev_name, const spi_mode_e spi_mode, const uint32_
 }
 
 /**
+ * @brief  设置SPI单次最大传输长度, 未设置或设置值为0会使用内部默认值SPI_MAX_TRANSFER_LEN
+ * @param  max_transfer_len: 输入参数, 单次最大传输长度
+ */
+void spi_set_max_transfer_len(const uint32_t max_transfer_len)
+{
+    g_spi_max_transfer_len = max_transfer_len;
+}
+
+/**
  * @brief  关闭SPI设备
  * @param  spi_dev_name: 输入参数, SPI设备名(如: /dev/spidev2.0)
  * @return true : 成功
@@ -309,6 +320,8 @@ bool spi_write_nbyte(const char *spi_dev_name, const uint8_t *write_data, const 
     struct spi_ioc_transfer spi_transfer = {0};
     // SPI设备信息
     spi_dev_info_t spi_dev_info = {0};
+    // 单次最大传输长度
+    uint32_t spi_max_transfer_len = 0;
 
     if (!spi_dev_name)
     {
@@ -324,15 +337,17 @@ bool spi_write_nbyte(const char *spi_dev_name, const uint8_t *write_data, const 
     // 未发送数据长度
     remain_data_len = write_data_len;
 
+    spi_max_transfer_len = (g_spi_max_transfer_len == 0) ? SPI_MAX_TRANSFER_LEN : g_spi_max_transfer_len;
+
     pthread_mutex_lock(&spi_dev_info.spi_dev_mutex);
 
     for (uint32_t i = 0; remain_data_len > 0; ++i)
     {
         // 计算本次发送数据长度(未发送数据长度和单次最大传输长度比较)
-        current_data_len = ((remain_data_len < SPI_MAX_TRANSFER_LEN) ? remain_data_len : SPI_MAX_TRANSFER_LEN);
+        current_data_len = ((remain_data_len < spi_max_transfer_len) ? remain_data_len : spi_max_transfer_len);
 
         // 计算本次发送数据偏移量
-        data_offset = (i * SPI_MAX_TRANSFER_LEN);
+        data_offset = (i * spi_max_transfer_len);
 
         // spi传输结构体赋值
         spi_transfer.tx_buf = (unsigned long)(write_data + data_offset);
@@ -440,6 +455,8 @@ bool spi_read_nbyte(uint8_t *read_data, const char *spi_dev_name, const uint16_t
     struct spi_ioc_transfer spi_transfer;
     // SPI设备信息
     spi_dev_info_t spi_dev_info = {0};
+    // 单次最大传输长度
+    uint32_t spi_max_transfer_len = 0;
 
     if ((!spi_dev_name) || (!read_data))
     {
@@ -463,14 +480,16 @@ bool spi_read_nbyte(uint8_t *read_data, const char *spi_dev_name, const uint16_t
     // 未读取数据长度
     remain_data_len = read_data_len;
 
+    spi_max_transfer_len = (g_spi_max_transfer_len == 0) ? SPI_MAX_TRANSFER_LEN : g_spi_max_transfer_len;
+
     // 循环读取数据
     for (uint32_t i = 0; remain_data_len > 0; ++i)
     {
         // 计算本次读取数据长度(未发送数据长度和单次最大传输长度比较)
-        current_data_len = (remain_data_len < SPI_MAX_TRANSFER_LEN) ? remain_data_len : SPI_MAX_TRANSFER_LEN;
+        current_data_len = (remain_data_len < spi_max_transfer_len) ? remain_data_len : spi_max_transfer_len;
 
         // 计算本次读取数据偏移量
-        data_offset = (i * SPI_MAX_TRANSFER_LEN);
+        data_offset = (i * spi_max_transfer_len);
 
         // spi传输结构体赋值
         spi_transfer.rx_buf = (unsigned long)(read_data + data_offset);
