@@ -316,7 +316,7 @@ bool spi_write_nbyte(const char *spi_dev_name, const uint8_t *write_data, const 
     // 本次发送数据偏移量
     uint32_t data_offset = 0;
     // 累计传输数据长度
-    int transferred_data_len = 0;
+    uint32_t transferred_data_len = 0;
     struct spi_ioc_transfer spi_transfer = {0};
     // SPI设备信息
     spi_dev_info_t spi_dev_info = {0};
@@ -613,7 +613,7 @@ bool spi_write_nbyte_sub(const char *spi_dev_name, const uint8_t reg_addr,
     // 本次发送数据偏移量
     uint32_t data_offset = 0;
     // 累计传输数据长度
-    int transferred_data_len = 0;
+    uint32_t transferred_data_len = 0;
     struct spi_ioc_transfer spi_transfer[2];
     // SPI设备信息
     spi_dev_info_t spi_dev_info = {0};
